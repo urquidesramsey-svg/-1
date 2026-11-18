@@ -86,5 +86,24 @@ home=function(){oldHomeV3();let c=el().querySelector('.card:last-child');if(c)c.
 const oldSamplesV3=samples;
 samples=function(){oldSamplesV3();let h=el().querySelector('h2');if(h)h.textContent='镜片管理 V0.4'};
 
+
+// V0.5: 本地实验提醒。沿用 V0.4 数据键，不清空既有记录。
+state.reminderSettings=state.reminderSettings||{minutes:120};
+function reminderFor(r){return r?.reminder||null}
+function reminderTime(v){return new Date(v).toLocaleString('zh-CN',{hour12:false})}
+function setReminderMinutes(){let v=Number(document.getElementById('reminderMinutes')?.value);if(!Number.isFinite(v)||v<1||v>1440)return alert('请输入1～1440分钟');state.reminderSettings.minutes=v;save();render()}
+function setRecordReminder(rid){let r=state.records.find(x=>x.id===rid);if(!r)return;let mins=Number(document.getElementById('recordReminderMinutes')?.value||state.reminderSettings.minutes);if(!Number.isFinite(mins)||mins<1||mins>1440)return alert('请输入1～1440分钟');let base=r.started?new Date(r.started).getTime():Date.now();r.reminder={due:new Date(base+mins*60000).toISOString(),minutes:mins,done:false,notified:false};save();render()}
+function reminderAction(rid,act){let r=state.records.find(x=>x.id===rid);if(!r?.reminder)return;if(act==='done')r.reminder.done=true;else if(act==='cancel')r.reminder=null;else if(act==='snooze'){r.reminder.due=new Date(Date.now()+10*60000).toISOString();r.reminder.notified=false}save();render()}
+function reminderCard(r){let m=r.reminder;if(!m)return `<section class="card"><h2>🔔 下一片清洗提醒</h2><p class="mini">从正式开始测量起计算；如尚未开始，则从现在起计算。</p><div class="row"><input id="recordReminderMinutes" type="number" min="1" max="1440" value="${state.reminderSettings.minutes}" style="max-width:110px"><span style="align-self:center">分钟后</span><button onclick="setRecordReminder('${r.id}')">设置提醒</button></div></section>`;let delta=new Date(m.due).getTime()-Date.now(),label=m.done?'已完成':delta<=0?'⏰ 到时间了':'剩余 '+Math.floor(delta/3600000)+'小时'+Math.floor((delta%3600000)/60000)+'分钟';return `<section class="card"><h2>🔔 下一片清洗提醒</h2><p><b>${esc(label)}</b><br>提醒时间：${reminderTime(m.due)}</p><p class="mini">${m.done?'清洗提醒已完成':'软件打开时会提示；iPhone 锁屏或关闭网页后不能保证准时通知，请同时设置系统闹钟。'}</p><div class="row">${m.done?'':`<button onclick="reminderAction('${r.id}','done')">已清洗</button><button class="secondary" onclick="reminderAction('${r.id}','snooze')">推迟10分钟</button>`}<button class="secondary" onclick="reminderAction('${r.id}','cancel')">取消提醒</button></div></section>`}
+const oldStartMeasureV4=startMeasure;
+startMeasure=function(rid){let before=state.records.find(x=>x.id===rid)?.started;oldStartMeasureV4(rid);let r=state.records.find(x=>x.id===rid);if(!before&&r?.started){r.reminder={due:new Date(new Date(r.started).getTime()+Number(state.reminderSettings.minutes||120)*60000).toISOString(),minutes:state.reminderSettings.minutes||120,done:false,notified:false};save();render()}}
+const oldDetailV4=detail;
+detail=function(){oldDetailV4();let r=state.records.find(x=>x.id===current);if(r)el().insertAdjacentHTML('afterbegin',reminderCard(r))};
+const oldHomeV4=home;
+home=function(){oldHomeV4();let active=state.records.filter(r=>r.reminder&&!r.reminder.done).sort((a,b)=>new Date(a.reminder.due)-new Date(b.reminder.due));let html=`<section class="card"><h2>🔔 清洗提醒</h2><p class="mini">开始测量后自动创建下一片清洗提醒。</p><label>默认间隔（分钟）</label><div class="row"><input type="number" min="1" max="1440" id="reminderMinutes" value="${state.reminderSettings.minutes}" style="max-width:110px"><button class="secondary" onclick="setReminderMinutes()">保存设置</button></div>${active.length?active.map(r=>`<div class="compact"><b>${esc(sampleName(r.test))}</b> · ${reminderTime(r.reminder.due)} <button class="secondary" onclick="openRec('${r.id}')">查看</button></div>`).join(''):'<p class="mini">暂无进行中的清洗提醒</p>'}<p class="mini">提醒保存在本机。页面运行时可提示；锁屏、关闭应用或清除网站数据后不能保证提醒。</p></section>`;el().insertAdjacentHTML('afterbegin',html)};
+let lastReminderCheck=0;
+function checkDueReminders(){if(Date.now()-lastReminderCheck<10000)return;lastReminderCheck=Date.now();let due=state.records.filter(r=>r.reminder&&!r.reminder.done&&!r.reminder.notified&&Date.now()>=new Date(r.reminder.due).getTime());if(!due.length)return;for(let r of due)r.reminder.notified=true;save();if('Notification'in window&&Notification.permission==='granted'){for(let r of due){try{new Notification('该清洗下一片镜片了',{body:'当前测试片：'+sampleName(r.test)})}catch(e){}}}alert('🔔 到时间了：请清洗下一片镜片。\n'+due.map(r=>'当前测试片：'+sampleName(r.test)).join('\n'));if(page==='home'||page==='detail')render()}
+setInterval(checkDueReminders,15000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkDueReminders()});
+
 render();if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>{});
 </script></body></html>
